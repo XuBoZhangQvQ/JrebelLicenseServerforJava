@@ -51,5 +51,3 @@ JRebel for Android
 XRebel
 
 JetBrains Products
-
-## Feedback
