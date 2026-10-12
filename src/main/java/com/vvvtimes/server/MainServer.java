@@ -2,6 +2,7 @@ package com.vvvtimes.server;
 
 import com.vvvtimes.JrebelUtil.JrebelSign;
 import com.vvvtimes.util.rsasign;
+import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 
 import java.io.IOException;
@@ -140,43 +141,44 @@ public class MainServer extends AbstractHandler {
         String username = request.getParameter("username");
         String guid = request.getParameter("guid");
         System.out.println(((Request) request).getParameters());
-        boolean offline = Boolean.parseBoolean(request.getParameter("offline"));
-        String validFrom = "null";
-        String validUntil = "null";
-        if (offline) {
-            String clientTime = request.getParameter("clientTime");
-            String offlineDays = request.getParameter("offlineDays");
-            //long clinetTimeUntil = Long.parseLong(clientTime) + Long.parseLong(offlineDays)  * 24 * 60 * 60 * 1000;
-            long clinetTimeUntil = Long.parseLong(clientTime) + 180L * 24 * 60 * 60 * 1000;
+        // JRebel 2024+ 客户端在线租约(offline=false)的验签逻辑有缺陷，
+        // 会抛 Cannot read the array length because "sigBytes" is null，
+        // 因此无论客户端请求 online/offline(含带 oldGuid 的续租)，一律按离线租约返回
+        boolean offline = true;
+        String validFrom = "";
+        String validUntil = "";
+        String clientTime = request.getParameter("clientTime");
+        try {
+            long clientTimeMillis = Long.parseLong(clientTime);
             validFrom = clientTime;
-            validUntil = String.valueOf(clinetTimeUntil);
+            validUntil = String.valueOf(clientTimeMillis + 180L * 24 * 60 * 60 * 1000);
+        } catch (NumberFormatException ignored) {
         }
         baseRequest.setHandled(true);
-        String jsonStr = "{\n" +
-                "    \"serverVersion\": \"3.2.4\",\n" +
-                "    \"serverProtocolVersion\": \"1.1\",\n" +
-                "    \"serverGuid\": \"a1b4aea8-b031-4302-b602-670a990272cb\",\n" +
-                "    \"groupType\": \"managed\",\n" +
-                "    \"id\": 1,\n" +
-                "    \"licenseType\": 1,\n" +
-                "    \"evaluationLicense\": false,\n" +
-                "    \"signature\": \"OJE9wGg2xncSb+VgnYT+9HGCFaLOk28tneMFhCbpVMKoC/Iq4LuaDKPirBjG4o394/UjCDGgTBpIrzcXNPdVxVr8PnQzpy7ZSToGO8wv/KIWZT9/ba7bDbA8/RZ4B37YkCeXhjaixpmoyz/CIZMnei4q7oWR7DYUOlOcEWDQhiY=\",\n" +
-                "    \"serverRandomness\": \"H2ulzLlh7E0=\",\n" +
-                "    \"seatPoolType\": \"standalone\",\n" +
-                "    \"statusCode\": \"SUCCESS\",\n" +
-                "    \"offline\": " + String.valueOf(offline) + ",\n" +
-                "    \"validFrom\": " + validFrom + ",\n" +
-                "    \"validUntil\": " + validUntil + ",\n" +
-                "    \"company\": \"Administrator\",\n" +
-                "    \"orderId\": \"\",\n" +
-                "    \"zeroIds\": [\n" +
-                "        \n" +
-                "    ],\n" +
-                "    \"licenseValidFrom\": 1490544001000,\n" +
-                "    \"licenseValidUntil\": 1691839999000\n" +
-                "}";
 
-        JSONObject jsonObject = JSONObject.fromObject(jsonStr);
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("serverVersion", "3.2.4");
+        jsonObject.put("serverProtocolVersion", "1.1");
+        jsonObject.put("serverGuid", "a1b4aea8-b031-4302-b602-670a990272cb");
+        jsonObject.put("groupType", "managed");
+        jsonObject.put("id", 1);
+        jsonObject.put("licenseType", 1);
+        jsonObject.put("evaluationLicense", false);
+        jsonObject.put("signature", "OJE9wGg2xncSb+VgnYT+9HGCFaLOk28tneMFhCbpVMKoC/Iq4LuaDKPirBjG4o394/UjCDGgTBpIrzcXNPdVxVr8PnQzpy7ZSToGO8wv/KIWZT9/ba7bDbA8/RZ4B37YkCeXhjaixpmoyz/CIZMnei4q7oWR7DYUOlOcEWDQhiY=");
+        jsonObject.put("serverRandomness", "H2ulzLlh7E0=");
+        jsonObject.put("seatPoolType", "standalone");
+        jsonObject.put("statusCode", "SUCCESS");
+        jsonObject.put("offline", offline);
+        jsonObject.put("validFrom", validFrom);
+        jsonObject.put("validUntil", validUntil);
+        jsonObject.put("company", "Administrator");
+        jsonObject.put("orderId", "");
+        jsonObject.put("zeroIds", new JSONArray());
+        // licenseValidUntil 原写死 1691839999000(2023-08-12，已过期)，
+        // 新版客户端会因许可过期在 JS 验签阶段直接崩溃，这里跟随租约时间动态返回
+        jsonObject.put("licenseValidFrom", validFrom);
+        jsonObject.put("licenseValidUntil", validUntil);
+
         if (clientRandomness == null || username == null || guid == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         } else {
